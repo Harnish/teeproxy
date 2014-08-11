@@ -16,6 +16,8 @@ var (
 	listen           = flag.String("l", ":8888", "port to accept requests")
 	targetProduction = flag.String("a", "localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	altTarget        = flag.String("b", "localhost:8081", "where testing traffic goes. response are skipped. http://localhost:8081/test")
+	compareResponses = flag.Bool("compare", false, "compare responses from prod and test")
+	responseTimes	 = flag.Bool("timing", false, "compare response times between 2 targets")
 	debug            = flag.Bool("debug", false, "more logging, showing ignored output")
 )
 
@@ -32,24 +34,30 @@ func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				fmt.Println("Recovered in f", r)
 			}
 		}()
+		start := time.Now()
 		client_tcp_conn, _ := net.DialTimeout("tcp", h.Alternative, time.Duration(1*time.Second)) // Open new TCP connection to the server
 		client_http_conn := httputil.NewClientConn(client_tcp_conn, nil)                          // Start a new HTTP connection on it
 		client_http_conn.Write(req1)                                                              // Pass on the request
 		client_http_conn.Read(req1)                                                               // Read back the reply
-		client_http_conn.Close()                                                                  // Close the connection to the server
+		client_http_conn.Close() 								  // Close the connection to the server
+		elapsed := time.Since(start)
+		//need to get elapsed out to the main thread
+		fmt.Println("Secondary time: ", elapsed)
 	}()
 	defer func() {
 		if r := recover(); r != nil && *debug {
 			fmt.Println("Recovered in f", r)
 		}
 	}()
-
+	start := time.Now()
 	client_tcp_conn, _ := net.DialTimeout("tcp", h.Target, time.Duration(3*time.Second)) // Open new TCP connection to the server
 	client_http_conn := httputil.NewClientConn(client_tcp_conn, nil)                     // Start a new HTTP connection on it
 	client_http_conn.Write(req2)                                                         // Pass on the request
 	resp, _ := client_http_conn.Read(req2)                                               // Read back the reply
 	resp.Write(w)                                                                        // Write the reply to the original connection
 	client_http_conn.Close()                                                             // Close the connection to the server
+	elapsed := time.Since(start)
+	fmt.Println("Prod time:", elapsed)
 }
 
 func main() {
